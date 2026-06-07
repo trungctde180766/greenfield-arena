@@ -1,0 +1,63 @@
+Để xây dựng hệ thống đồ sộ này từ con số 0 một cách bài bản nhất (không bị rối), bạn nên chia dự án thành 7 Giai đoạn (Phases). Việc code theo đúng thứ tự này giúp bạn xây dựng nền móng vững chắc trước khi dựng phần ngọn.
+
+Dưới đây là kế hoạch (Plan) từng bước, file nào nên tạo trước, và ý nghĩa của code trong đó:
+
+Phase 1: Đặt nền móng - Khởi tạo & Biến
+Làm file: main.tf và variables.tf
+
+main.tf: Đây là file bạn phải viết đầu tiên. Nó khai báo cho Terraform biết: "Ê Terraform, tải cho tôi 4 công cụ (Providers) này về: aws, tls (để tạo mã khoá), local (để lưu file khoá vào máy), và http (để gọi API lấy IP)".
+variables.tf: Chứa các tham số cài đặt chung.
+Giải thích code: Thay vì code "chết" (hardcode) tên dự án hay loại máy chủ ở mọi nơi, ta khai báo biến project_name = "k8s-1click", instance_type = "t3.small". Lúc sau các file khác chỉ cần gọi var.project_name ra xài. Đổi 1 chỗ là đổi toàn bộ.
+Phase 2: Quy hoạch đất đai - Mạng lưới (Networking)
+Làm file: network.tf
+
+Mục tiêu: Tạo ra một không gian mạng riêng lập để chứa máy chủ.
+Giải thích code:
+aws_vpc: Tạo mạng ảo (Virtual Private Cloud).
+aws_subnet: Tạo các mạng con. AWS bắt buộc Load Balancer phải nằm ở ít nhất 2 vùng khác nhau, nên ta tạo mảng public[0] và public[1].
+aws_internet_gateway & aws_route_table: Gắn "Cáp quang" vào mạng ảo. Không có 2 tài nguyên này, EC2 của bạn sẽ bị "mù", không thể tải Docker/K8s từ Internet về được.
+Phase 3: Xây tường rào bảo vệ - Security & Tường lửa
+Làm file: security.tf
+
+Mục tiêu: Kiểm soát ai được quyền truy cập vào đâu.
+Giải thích code:
+Dùng data block http "myip": Gọi API lấy địa chỉ IP mạng wifi của bạn.
+aws_security_group "alb_sg": Tường lửa của Load Balancer. Chỉ cho phép Port 80 (HTTP) từ bất cứ đâu (0.0.0.0/0) chui vào.
+aws_security_group "ec2_sg": Tường lửa của máy chủ EC2.
+Cổng 22 (SSH): Chỉ cho phép IP của bạn (data.http.myip) truy cập.
+Cổng 30000 (K8s): Chỉ cho phép traffic đến từ cái tường lửa alb_sg ở trên. Hacker bên ngoài không thể gõ IP EC2:30000 để phá được.
+Phase 4: Mua Server & Bơm kịch bản cài đặt (Compute)
+Làm file: compute.tf
+
+Mục tiêu: Cấp phát máy ảo và tự động hoá chìa khoá.
+Giải thích code:
+tls_private_key: Bắt Terraform tự sinh ra một chìa khoá RSA.
+aws_key_pair & local_sensitive_file: Lấy nửa khoá công khai đẩy lên AWS, lấy nửa khoá bí mật lưu thành file .pem dưới máy bạn.
+aws_instance: Khởi tạo con máy ảo EC2. Điểm mấu chốt là dòng user_data = file("scripts/user_data.sh"). Nó sẽ nhét toàn bộ kịch bản cài đặt vào bụng con EC2 để EC2 tự chạy ngầm lúc vừa khởi động xong.
+Phase 5: Người dẫn đường - Load Balancer (Định tuyến)
+Làm file: alb.tf
+
+Mục tiêu: Cân bằng tải và che giấu IP thật của máy chủ.
+Giải thích code:
+aws_lb: Tạo mặt tiền Load Balancer.
+aws_lb_target_group: Đích ngắm của ALB. Ta trỏ nó vào cổng 30000.
+Khối health_check: Đây là phần thông minh nhất. ALB sẽ liên tục "gõ cửa" cổng 30000 cứ mỗi 15 giây. Nhờ cơ chế này, ta không cần lo lắng việc App bị mất kết nối lúc EC2 chưa cài xong.
+Phase 6: Hồn cốt của Dự án - Kubernetes & Web App
+Làm file: scripts/user_data.sh
+
+Mục tiêu: Cài K8s và App mà không cần người can thiệp.
+Giải thích code (Chạy trên Linux của EC2):
+Cài Docker & lệnh kind create cluster: Khởi tạo cụm K8s, nối cổng 30000 của máy ảo vật lý vào thẳng K8s (extraPortMappings).
+Viết file index.html: Chứa code giao diện Đặt sân thể thao GreenField xịn xò.
+docker build: Đóng gói HTML thành Docker Image.
+kind load docker-image: Nạp thẳng Image đó vào RAM của K8s.
+kubectl apply: Triển khai Image thành Pod và tạo Service NodePort kết nối ra ngoài.
+Phase 7: In ra giấy khen (Outputs)
+Làm file: outputs.tf
+
+Mục tiêu: Tiết kiệm thời gian cho lập trình viên.
+Giải thích code:
+Thay vì phải lên AWS Console tìm bới link Web và IP máy chủ, Terraform chạy xong sẽ in thẳng ra màn hình Terminal hai thứ: URL của trang web (alb_url) và câu lệnh copy-paste để SSH thẳng vào server (ssh_command).
+Tip báo cáo: Nếu đi đúng theo trình tự 7 phase này để thuyết trình, bạn sẽ đi từ móng nhà (Network) ➔ Tường rào (Security) ➔ Khung xương (EC2) ➔ Cửa ngõ (ALB) ➔ Nội thất (App). Giám khảo sẽ cực kỳ ấn tượng vì tư duy mạch lạc và hiểu sâu hệ thống của bạn!
+
+10:41 PM

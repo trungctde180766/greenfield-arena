@@ -1,0 +1,29 @@
+# Thư mục chứa thư viện và binary của Terraform tải về (Nặng và không cần thiết đưa lên Git)
+.terraform/
+
+# File lưu trạng thái hệ thống của Terraform (CỰC KỲ NHẠY CẢM)
+# File này chứa thông tin toàn bộ cấu hình, IP, ID trên AWS, tuyệt đối không được đưa lên Git!
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Các file chứa biến bảo mật (nếu sau này bạn có xài)
+*.tfvars
+*.tfvars.json
+
+# File khóa cấu hình mạng, mật khẩu
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# BỎ QUA FILE CHÌA KHÓA SSH (.pem) - CỰC KỲ QUAN TRỌNG
+# Nếu lộ file này, hacker có thể chiếm quyền điều khiển máy chủ EC2 của bạn ngay lập tức!
+*.pem
+
+# Các file hệ điều hành sinh ra rác
+.DS_Store
+Thumbs.db
